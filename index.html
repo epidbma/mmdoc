@@ -1624,72 +1624,92 @@
         async function saveDocument(e) {
             e.preventDefault();
             
-            // Check if either file is uploaded or Google Drive link is provided
-            const driveLink = document.getElementById('docLink').value;
-            if (!uploadedFileUrl && !driveLink) {
-                alert('กรุณาอัปโหลดไฟล์ PDF หรือใส่ลิงก์ Google Drive');
-                return;
-            }
-            
-            const formData = {
-                title: document.getElementById('docTitle').value,
-                receipt_no: document.getElementById('docReceiptNo').value,
-                doc_number: document.getElementById('docNumber').value,
-                year: parseInt(document.getElementById('docYear').value),
-                agency: document.getElementById('docAgency').value,
-                doc_type: document.getElementById('docType').value,
-                category: document.getElementById('docCategory').value,
-                link: uploadedFileUrl || driveLink,
-                is_uploaded: !!uploadedFileUrl,
-                file_name: selectedFile ? selectedFile.name : null,
-                date_added: new Date().toISOString(),
-                last_modified: new Date().toISOString()
-            };
+            // Show loading state
+            const saveButton = e.target.querySelector('.btn-save');
+            const originalText = saveButton.textContent;
+            saveButton.textContent = 'กำลังบันทึก...';
+            saveButton.disabled = true;
 
             try {
-                if (editingId) {
-                    // Update existing document in Supabase
-                    const { data, error } = await window.supabaseClient
-                        .from('documents')
-                        .update(formData)
-                        .eq('id', editingId)
-                        .select();
-                    
-                    if (error) throw error;
-                    
-                    // Update local array
-                    const index = documents.findIndex(d => d.id === editingId);
-                    if (index !== -1) {
-                        documents[index] = { ...documents[index], ...formData };
+                const driveLink = document.getElementById('docLink').value;
+                if (!uploadedFileUrl && !driveLink) {
+                    throw new Error('กรุณาอัปโหลดไฟล์ PDF หรือใส่ลิงก์ Google Drive');
+                }
+                
+                const formData = {
+                    title: document.getElementById('docTitle').value,
+                    receipt_no: document.getElementById('docReceiptNo').value,
+                    doc_number: document.getElementById('docNumber').value,
+                    year: parseInt(document.getElementById('docYear').value),
+                    agency: document.getElementById('docAgency').value,
+                    doc_type: document.getElementById('docType').value,
+                    category: document.getElementById('docCategory').value,
+                    link: uploadedFileUrl || driveLink,
+                    is_uploaded: !!uploadedFileUrl,
+                    file_name: selectedFile ? selectedFile.name : null,
+                    date_added: new Date().toISOString(),
+                    last_modified: new Date().toISOString()
+                };
+
+                let retryCount = 0;
+                const maxRetries = 3;
+                
+                while (retryCount < maxRetries) {
+                    try {
+                        if (editingId) {
+                            const { data, error } = await window.supabaseClient
+                                .from('documents')
+                                .update(formData)
+                                .eq('id', editingId)
+                                .select();
+                            
+                            if (error) throw error;
+                            
+                            const index = documents.findIndex(d => d.id === editingId);
+                            if (index !== -1) {
+                                documents[index] = { ...documents[index], ...formData };
+                            }
+                            
+                        } else {
+                            const { data, error } = await window.supabaseClient
+                                .from('documents')
+                                .insert([formData])
+                                .select();
+                            
+                            if (error) throw error;
+                            
+                            const newDoc = data[0];
+                            documents.push(newDoc);
+                        }
+                        
+                        // If successful, break the retry loop
+                        break;
+                        
+                    } catch (err) {
+                        retryCount++;
+                        if (retryCount === maxRetries) {
+                            throw err;
+                        }
+                        // Wait before retrying (exponential backoff)
+                        await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
                     }
-                } else {
-                    // Add new document to Supabase
-                    const { data, error } = await window.supabaseClient
-                        .from('documents')
-                        .insert([formData])
-                        .select();
-                    
-                    if (error) throw error;
-                    
-                    // Add to local array
-                    const newDoc = data[0];
-                    documents.push(newDoc);
                 }
 
                 closeModal();
                 filterDocuments();
                 updateStats();
-                
-                // Clear auto-saved draft
                 localStorage.removeItem('documentDraft');
                 
-                // Show success message
                 const message = editingId ? 'แก้ไขเอกสารเรียบร้อยแล้ว' : 'เพิ่มเอกสารเรียบร้อยแล้ว';
                 alert(message + (uploadedFileUrl ? ' (ไฟล์ถูกอัปโหลดแล้ว)' : ' (ใช้ลิงก์ Google Drive)'));
                 
             } catch (error) {
                 console.error('Error saving document:', error);
-                alert('เกิดข้อผิดพลาดในการบันทึกเอกสาร: ' + error.message);
+                alert('เกิดข้อผิดพลาดในการบันทึกเอกสาร: ' + error.message + '\nกรุณาลองใหม่อีกครั้ง');
+            } finally {
+                // Reset button state
+                saveButton.textContent = originalText;
+                saveButton.disabled = false;
             }
         }
 
