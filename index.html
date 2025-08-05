@@ -776,11 +776,19 @@
             }
         }
     </style>
-    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-storage-compat.js"></script>
-    <script type="module">
-        import { storage } from './js/firebaseConfig.js';
-        window.storage = storage;
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        // Supabase configuration - กรุณาแทนที่ด้วยข้อมูลจากโปรเจค Supabase ของคุณ
+        const SUPABASE_URL = 'https://snqkcpoqxkxdapjiymne.supabase.co'
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNucWtjcG9xeGt4ZGFwaml5bW5lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQzNzk0MDksImV4cCI6MjA2OTk1NTQwOX0.fCCpm3YABkzXi3a4cDgT49gAOGReasHYuCPhEqob3JQ'
+        
+        // Initialize Supabase client
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        // Make Supabase available globally
+        window.supabaseClient = supabase;
+        
+        console.log('Supabase initialized successfully');
     </script>
 </head>
 <body>
@@ -884,6 +892,30 @@
         </div>
     </div>
 
+    <!-- Document Viewer Modal -->
+    <div id="documentViewerModal" class="modal">
+        <div class="modal-content" style="max-width: 90%; max-height: 90%; padding: 1rem;">
+            <div class="modal-header" style="margin-bottom: 1rem; padding-bottom: 1rem;">
+                <h2 class="modal-title" id="viewerModalTitle">ดูเอกสาร</h2>
+                <span class="close" onclick="closeViewerModal()">&times;</span>
+            </div>
+            <div style="height: calc(100vh - 200px); overflow: hidden;">
+                <iframe id="documentFrame" 
+                        style="width: 100%; height: 100%; border: none; border-radius: 8px;" 
+                        src="">
+                </iframe>
+            </div>
+            <div style="margin-top: 1rem; text-align: center;">
+                <button class="upload-btn" onclick="openInNewTab()" style="margin-right: 0.5rem;">
+                    <i class="fas fa-external-link-alt"></i> เปิดในแท็บใหม่
+                </button>
+                <button class="btn-cancel" onclick="closeViewerModal()">
+                    ปิด
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Add/Edit Document Modal -->
     <div id="documentModal" class="modal">
         <div class="modal-content">
@@ -961,9 +993,14 @@
                             <i class="fas fa-cloud-upload-alt" style="font-size: 3rem; color: #1D4D4F; margin-bottom: 1rem;"></i>
                             <p style="font-size: 1.1rem; font-weight: 500; margin-bottom: 0.5rem;">ลากไฟล์ PDF มาวางที่นี่</p>
                             <p style="color: #666; margin-bottom: 1rem;">หรือ</p>
-                            <button type="button" class="upload-btn" onclick="document.getElementById('fileInput').click()">
-                                <i class="fas fa-folder-open"></i> เลือกไฟล์
-                            </button>
+                            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center;">
+                                <button type="button" class="upload-btn" onclick="checkSupabaseConnection()" style="background: #059669;">
+                                    <i class="fas fa-plug"></i> ทดสอบ Supabase
+                                </button>
+                                <button type="button" class="upload-btn" onclick="document.getElementById('fileInput').click()">
+                                    <i class="fas fa-folder-open"></i> เลือกไฟล์
+                                </button>
+                            </div>
                             <input type="file" id="fileInput" accept=".pdf" style="display: none;">
                             <p style="color: #666; font-size: 0.8rem; margin-top: 1rem;">รองรับเฉพาะไฟล์ PDF ขนาดไม่เกิน 10MB</p>
                         </div>
@@ -1006,7 +1043,7 @@
     </div>
 
     <!-- เพิ่ม keyboard shortcuts helper -->
-    <div id="shortcutHelper" class="shortcut-helper">
+    <div id="shortcutHelper" class="shortcut-helper" style="display: none;">
         <div class="shortcut-list">
             <div class="shortcut-item">
                 <kbd>Ctrl/⌘</kbd> + <kbd>N</kbd>
@@ -1027,81 +1064,130 @@
         // File upload variables
         let selectedFile = null;
         let uploadedFileUrl = null;
+        let currentDocumentUrl = null; // Store current viewing document URL
 
-        // Sample data - In real implementation, this would come from Google Drive API
-        let documents = [
-            {
-                id: 1,
-                title: "คำสั่งแต่งตั้งคณะกรรมการจัดงานประจำปี 2567",
-                receiptNo: "กท 0001/2567",
-                docNumber: "กท 001/2567",
-                year: "2567",
-                agency: "สำนักงานเขต",
-                docType: "หนังสือขาเข้า",
-                category: "คำสั่ง",
-                link: "https://drive.google.com/file/d/1example1/view",
-                dateAdded: "2024-01-15"
-            },
-            {
-                id: 2,
-                title: "ประกาศรับสมัครงานประจำปี 2567",
-                receiptNo: "กท 0002/2567",
-                docNumber: "กท 002/2567",
-                year: "2567",
-                agency: "กรมการแพทย์",
-                docType: "หนังสือขาออก",
-                category: "ประกาศ",
-                link: "https://drive.google.com/file/d/1example2/view",
-                dateAdded: "2024-01-20"
-            },
-            {
-                id: 3,
-                title: "รายงานผลการดำเนินงานไตรมาส 1",
-                receiptNo: "กท 0003/2567",
-                docNumber: "กท 003/2567",
-                year: "2567",
-                agency: "สำนักการศึกษา",
-                docType: "เอกสารภายใน",
-                category: "รายงาน",
-                link: "https://drive.google.com/file/d/1example3/view",
-                dateAdded: "2024-02-01"
-            },
-            {
-                id: 4,
-                title: "หนังสือขอความร่วมมือจัดกิจกรรมวันเด็ก",
-                receiptNo: "กท 0004/2567",
-                docNumber: "กท 004/2567",
-                year: "2567",
-                agency: "สำนักงานเขต",
-                docType: "หนังสือขาออก",
-                category: "หนังสือราชการ",
-                link: "https://drive.google.com/file/d/1example4/view",
-                dateAdded: "2024-02-05"
-            },
-            {
-                id: 5,
-                title: "หนังสือแจ้งผลการประเมินโครงการ",
-                receiptNo: "กท 0005/2567",
-                docNumber: "กท 005/2567",
-                year: "2567",
-                agency: "สำนักงานนโยบายและแผน",
-                docType: "หนังสือขาเข้า",
-                category: "หนังสือราชการ",
-                link: "https://drive.google.com/file/d/1example5/view",
-                dateAdded: "2024-02-10"
-            }
-        ];
-
-        let filteredDocuments = [...documents];
+        // Supabase variables
+        let documents = [];
+        let filteredDocuments = [];
         let editingId = null;
 
         // Initialize the application
         document.addEventListener('DOMContentLoaded', function() {
-            renderDocuments();
-            updateStats();
+            // ตรวจสอบ Supabase connection
+            checkSupabaseConnection();
+            
+            loadDocumentsFromSupabase();
             setupEventListeners();
             loadDraft(); // Load auto-saved draft if available
+            
+            // เปิดใช้งาน real-time listener (เฉพาะเมื่อต้องการ sync แบบ real-time)
+            // setupRealtimeListener();
         });
+
+        // ตรวจสอบการเชื่อมต่อ Firebase
+        async function checkSupabaseConnection() {
+            try {
+                console.log('=== Testing Supabase Connection ===');
+                
+                if (!window.supabaseClient) {
+                    alert('Supabase client ไม่พร้อมใช้งาน - กรุณาตรวจสอบการเชื่อมต่อ');
+                    return;
+                }
+                
+                // ทดสอบการเชื่อมต่อฐานข้อมูล
+                const { data, error } = await window.supabaseClient
+                    .from('documents')
+                    .select('count', { count: 'exact', head: true });
+                
+                if (error) {
+                    console.error('Database connection failed:', error);
+                    alert('การเชื่อมต่อฐานข้อมูล Supabase ล้มเหลว: ' + error.message);
+                    return;
+                }
+                
+                console.log('Database connection: OK');
+                
+                // ทดสอบการเชื่อมต่อ Storage
+                try {
+                    const { data: buckets, error: storageError } = await window.supabaseClient.storage.listBuckets();
+                    
+                    if (storageError) {
+                        console.error('Storage connection failed:', storageError);
+                        alert('การเชื่อมต่อ Supabase Storage ล้มเหลว: ' + storageError.message);
+                    } else {
+                        console.log('Storage connection: OK');
+                        console.log('Available buckets:', buckets);
+                        // Removed success alert here
+                    }
+                } catch (storageError) {
+                    console.error('Storage test failed:', storageError);
+                    alert('การทดสอบ Storage ล้มเหลว แต่ฐานข้อมูลเชื่อมต่อได้');
+                }
+                
+            } catch (error) {
+                console.error('Supabase connection error:', error);
+                alert('เกิดข้อผิดพลาดในการเชื่อมต่อ Supabase: ' + error.message);
+            }
+        }
+
+        // Load documents from Firestore
+        async function loadDocumentsFromSupabase() {
+            try {
+                const { data, error } = await window.supabaseClient
+                    .from('documents')
+                    .select('*')
+                    .order('date_added', { ascending: false });
+                
+                if (error) {
+                    console.error('Supabase error:', error);
+                    throw error;
+                }
+                
+                documents = data || [];
+                filteredDocuments = [...documents];
+                renderDocuments();
+                updateStats();
+                
+                console.log('Loaded', documents.length, 'documents from Supabase');
+            } catch (error) {
+                console.error('Error loading documents from Supabase:', error);
+                // Fallback to sample data if Supabase fails
+                loadSampleData();
+            }
+        }
+
+        // Fallback sample data
+        function loadSampleData() {
+            documents = [
+                {
+                    id: 'sample1',
+                    title: "คำสั่งแต่งตั้งคณะกรรมการจัดงานประจำปี 2567",
+                    receiptNo: "กท 0001/2567",
+                    docNumber: "กท 001/2567",
+                    year: "2567",
+                    agency: "สำนักงานเขต",
+                    docType: "หนังสือขาเข้า",
+                    category: "คำสั่ง",
+                    link: "https://drive.google.com/file/d/1example1/view",
+                    dateAdded: "2024-01-15"
+                },
+                {
+                    id: 'sample2',
+                    title: "ประกาศรับสมัครงานประจำปี 2567",
+                    receiptNo: "กท 0002/2567",
+                    docNumber: "กท 002/2567",
+                    year: "2567",
+                    agency: "กรมการแพทย์",
+                    docType: "หนังสือขาออก",
+                    category: "ประกาศ",
+                    link: "https://drive.google.com/file/d/1example2/view",
+                    dateAdded: "2024-01-20"
+                }
+            ];
+            filteredDocuments = [...documents];
+            renderDocuments();
+            updateStats();
+        }
 
         function setupEventListeners() {
             document.getElementById('searchInput').addEventListener('input', filterDocuments);
@@ -1132,7 +1218,12 @@
             document.addEventListener('keydown', function(e) {
                 // Close modal with Escape key
                 if (e.key === 'Escape') {
-                    closeModal();
+                    // Close viewer modal first if it's open
+                    if (document.getElementById('documentViewerModal').style.display === 'block') {
+                        closeViewerModal();
+                    } else {
+                        closeModal();
+                    }
                 }
                 
                 // Open add modal with Ctrl/Cmd + N
@@ -1227,6 +1318,8 @@
         }
 
         async function handleFile(file) {
+            console.log('Handling file:', file.name, 'Size:', file.size, 'Type:', file.type);
+            
             if (file.type !== 'application/pdf') {
                 alert('กรุณาเลือกไฟล์ PDF เท่านั้น');
                 return;
@@ -1238,88 +1331,161 @@
                 return;
             }
             
+            // ตรวจสอบว่า Supabase พร้อมใช้งาน
+            if (!window.supabaseClient) {
+                alert('Supabase ไม่พร้อมใช้งาน กรุณารีเฟรชหน้าและลองใหม่');
+                return;
+            }
+            
             selectedFile = file;
             showFilePreview(file);
-            await uploadToFirebase(file);
+            
+            console.log('Starting upload process...');
+            await uploadToSupabase(file);
         }
 
-        async function uploadToFirebase(file) {
+        async function uploadToSupabase(file) {
             try {
+                console.log('=== Starting Supabase Upload Process ===');
+                console.log('File details:', {
+                    name: file.name,
+                    size: file.size,
+                    type: file.type
+                });
+                
+                // ตรวจสอบว่า Supabase client พร้อมใช้งาน
+                if (!window.supabaseClient) {
+                    throw new Error('Supabase client ไม่พร้อมใช้งาน');
+                }
+                
                 // สร้างชื่อไฟล์ที่ไม่ซ้ำกัน
                 const timestamp = Date.now();
-                const fileName = `${timestamp}_${file.name}`;
+                const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+                const fileName = `${timestamp}_${safeName}`;
                 
-                // สร้าง reference ไปยัง storage
-                const storageRef = storage.ref();
-                const fileRef = storageRef.child(`documents/${fileName}`);
+                console.log('Upload filename:', fileName);
                 
-                // เริ่มการอัพโหลด
-                const uploadTask = fileRef.put(file);
+                // เริ่มการอัพโหลดไฟล์ไปยัง Supabase Storage
+                console.log('Starting upload to Supabase Storage...');
                 
-                // ติดตามความคืบหน้า
-                uploadTask.on('state_changed',
-                    // อัพเดทความคืบหน้า
-                    (snapshot) => {
-                        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                        document.getElementById('progressFill').style.width = `${progress}%`;
-                        document.getElementById('progressText').textContent = `${Math.round(progress)}%`;
-                    },
-                    // จัดการข้อผิดพลาด
-                    (error) => {
-                        console.error('Upload error:', error);
-                        alert(`เกิดข้อผิดพลาดในการอัพโหลด: ${error.message}`);
-                        removeFile();
-                    },
-                    // เมื่ออัพโหลดเสร็จ
-                    async () => {
-                        try {
-                            const downloadURL = await fileRef.getDownloadURL();
-                            uploadedFileUrl = downloadURL;
-                            document.getElementById('progressText').textContent = 'อัพโหลดสำเร็จ!';
-                            document.getElementById('progressFill').style.background = '#10b981';
+                const { data: uploadData, error: uploadError } = await window.supabaseClient.storage
+                    .from('documents') // ชื่อ bucket ใน Supabase Storage
+                    .upload(fileName, file, {
+                        onUploadProgress: (progress) => {
+                            const percentage = (progress.loaded / progress.total) * 100;
+                            console.log('Upload progress:', Math.round(percentage) + '%');
                             
-                            // บันทึกข้อมูลไฟล์
-                            const fileData = {
-                                name: file.name,
-                                size: file.size,
-                                type: file.type,
-                                uploadedAt: new Date().toISOString(),
-                                downloadURL
-                            };
-                            console.log('File uploaded successfully:', fileData);
+                            const progressFill = document.getElementById('progressFill');
+                            const progressText = document.getElementById('progressText');
                             
-                        } catch (error) {
-                            console.error('Error getting download URL:', error);
-                            alert('เกิดข้อผิดพลาดในการรับ URL: ' + error.message);
+                            if (progressFill) {
+                                progressFill.style.width = `${percentage}%`;
+                            }
+                            if (progressText) {
+                                progressText.textContent = `${Math.round(percentage)}%`;
+                            }
                         }
+                    });
+                
+                if (uploadError) {
+                    console.error('=== Upload Error ===');
+                    console.error('Error:', uploadError);
+                    
+                    let errorMessage = 'เกิดข้อผิดพลาดในการอัพโหลด';
+                    
+                    switch (uploadError.error) {
+                        case 'Unauthorized':
+                            errorMessage = 'ไม่มีสิทธิ์ในการอัพโหลดไฟล์ - กรุณาตรวจสอบ RLS Policies';
+                            break;
+                        case 'PayloadTooLarge':
+                            errorMessage = 'ไฟล์มีขนาดใหญ่เกินไป';
+                            break;
+                        default:
+                            errorMessage = `เกิดข้อผิดพลาด: ${uploadError.message}`;
                     }
-                );
+                    
+                    alert(errorMessage);
+                    removeFile();
+                    throw uploadError;
+                }
+                
+                console.log('=== Upload Completed ===');
+                console.log('Getting public URL...');
+                
+                // รับ public URL ของไฟล์ที่อัพโหลด
+                const { data: urlData } = window.supabaseClient.storage
+                    .from('documents')
+                    .getPublicUrl(fileName);
+                
+                const downloadURL = urlData.publicUrl;
+                uploadedFileUrl = downloadURL;
+                
+                console.log('Public URL obtained:', downloadURL);
+                
+                const progressText = document.getElementById('progressText');
+                const progressFill = document.getElementById('progressFill');
+                
+                if (progressText) progressText.textContent = 'อัพโหลดสำเร็จ!';
+                if (progressFill) progressFill.style.background = '#10b981';
+                
+                // บันทึกข้อมูลไฟล์
+                const fileData = {
+                    name: file.name,
+                    size: file.size,
+                    type: file.type,
+                    uploadedAt: new Date().toISOString(),
+                    downloadURL,
+                    storagePath: fileName
+                };
+                console.log('=== Upload Success ===');
+                console.log('File data:', fileData);
+                
+                return downloadURL;
                 
             } catch (error) {
-                console.error('Firebase upload error:', error);
+                console.error('=== Supabase Upload Error ===');
+                console.error('Error:', error);
                 alert('เกิดข้อผิดพลาดในการอัพโหลด: ' + error.message);
                 removeFile();
+                throw error;
             }
         }
 
         function showFilePreview(file) {
-            document.querySelector('.drop-zone-content').style.display = 'none';
-            document.getElementById('filePreview').style.display = 'block';
+            const dropZoneContent = document.querySelector('.drop-zone-content');
+            const filePreview = document.getElementById('filePreview');
+            const fileName = document.getElementById('fileName');
+            const fileSize = document.getElementById('fileSize');
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
             
-            document.getElementById('fileName').textContent = file.name;
-            document.getElementById('fileSize').textContent = formatFileSize(file.size);
+            if (dropZoneContent) dropZoneContent.style.display = 'none';
+            if (filePreview) filePreview.style.display = 'block';
+            
+            if (fileName) fileName.textContent = file.name;
+            if (fileSize) fileSize.textContent = formatFileSize(file.size);
             
             // Reset progress
-            document.getElementById('progressFill').style.width = '0%';
-            document.getElementById('progressText').textContent = '0%';
+            if (progressFill) {
+                progressFill.style.width = '0%';
+                progressFill.style.background = '#1D4D4F'; // Reset color
+            }
+            if (progressText) progressText.textContent = '0%';
         }
 
         function removeFile() {
             selectedFile = null;
             uploadedFileUrl = null;
-            document.querySelector('.drop-zone-content').style.display = 'block';
-            document.getElementById('filePreview').style.display = 'none';
-            document.getElementById('fileInput').value = '';
+            
+            const dropZoneContent = document.querySelector('.drop-zone-content');
+            const filePreview = document.getElementById('filePreview');
+            const fileInput = document.getElementById('fileInput');
+            const progressFill = document.getElementById('progressFill');
+            
+            if (dropZoneContent) dropZoneContent.style.display = 'block';
+            if (filePreview) filePreview.style.display = 'none';
+            if (fileInput) fileInput.value = '';
+            if (progressFill) progressFill.style.background = '#1D4D4F'; // Reset color
         }
 
         function formatFileSize(bytes) {
@@ -1370,13 +1536,13 @@
                         </div>
                     </div>
                     <div class="document-actions">
-                        <button class="action-btn view-btn" onclick="viewDocument('${doc.link}')">
+                        <button class="action-btn view-btn" onclick="viewDocument('${doc.link}', '${doc.title.replace(/'/g, "\\'")}')">
                             <i class="fas fa-eye"></i> ดูเอกสาร
                         </button>
-                        <button class="action-btn edit-btn" onclick="editDocument(${doc.id})">
+                        <button class="action-btn edit-btn" onclick="editDocument('${doc.id}')">
                             <i class="fas fa-edit"></i> แก้ไข
                         </button>
-                        <button class="action-btn delete-btn" onclick="deleteDocument(${doc.id}, '${doc.title}')">
+                        <button class="action-btn delete-btn" onclick="deleteDocument('${doc.id}', '${doc.title}')">
                             <i class="fas fa-trash"></i> ลบ
                         </button>
                     </div>
@@ -1455,7 +1621,7 @@
             removeFile(); // Clear any uploaded file when closing
         }
 
-        function saveDocument(e) {
+        async function saveDocument(e) {
             e.preventDefault();
             
             // Check if either file is uploaded or Google Drive link is provided
@@ -1467,78 +1633,161 @@
             
             const formData = {
                 title: document.getElementById('docTitle').value,
-                receiptNo: document.getElementById('docReceiptNo').value,
-                docNumber: document.getElementById('docNumber').value,
-                year: document.getElementById('docYear').value,
+                receipt_no: document.getElementById('docReceiptNo').value,
+                doc_number: document.getElementById('docNumber').value,
+                year: parseInt(document.getElementById('docYear').value),
                 agency: document.getElementById('docAgency').value,
-                docType: document.getElementById('docType').value,
+                doc_type: document.getElementById('docType').value,
                 category: document.getElementById('docCategory').value,
-                link: uploadedFileUrl || driveLink, // Use uploaded file URL or Google Drive link
-                isUploaded: !!uploadedFileUrl, // Flag to indicate if file was uploaded
-                fileName: selectedFile ? selectedFile.name : null,
-                dateAdded: new Date().toISOString().split('T')[0]
+                link: uploadedFileUrl || driveLink,
+                is_uploaded: !!uploadedFileUrl,
+                file_name: selectedFile ? selectedFile.name : null,
+                date_added: new Date().toISOString(),
+                last_modified: new Date().toISOString()
             };
 
-            if (editingId) {
-                // Update existing document
-                const index = documents.findIndex(d => d.id === editingId);
-                if (index !== -1) {
-                    documents[index] = { ...documents[index], ...formData };
+            try {
+                if (editingId) {
+                    // Update existing document in Supabase
+                    const { data, error } = await window.supabaseClient
+                        .from('documents')
+                        .update(formData)
+                        .eq('id', editingId)
+                        .select();
+                    
+                    if (error) throw error;
+                    
+                    // Update local array
+                    const index = documents.findIndex(d => d.id === editingId);
+                    if (index !== -1) {
+                        documents[index] = { ...documents[index], ...formData };
+                    }
+                } else {
+                    // Add new document to Supabase
+                    const { data, error } = await window.supabaseClient
+                        .from('documents')
+                        .insert([formData])
+                        .select();
+                    
+                    if (error) throw error;
+                    
+                    // Add to local array
+                    const newDoc = data[0];
+                    documents.push(newDoc);
                 }
-            } else {
-                // Add new document
-                const newDoc = {
-                    id: Math.max(...documents.map(d => d.id), 0) + 1,
-                    ...formData
-                };
-                documents.push(newDoc);
-            }
 
-            closeModal();
-            filterDocuments();
-            updateStats();
+                closeModal();
+                filterDocuments();
+                updateStats();
+                
+                // Clear auto-saved draft
+                localStorage.removeItem('documentDraft');
+                
+                // Show success message
+                const message = editingId ? 'แก้ไขเอกสารเรียบร้อยแล้ว' : 'เพิ่มเอกสารเรียบร้อยแล้ว';
+                alert(message + (uploadedFileUrl ? ' (ไฟล์ถูกอัปโหลดแล้ว)' : ' (ใช้ลิงก์ Google Drive)'));
+                
+            } catch (error) {
+                console.error('Error saving document:', error);
+                alert('เกิดข้อผิดพลาดในการบันทึกเอกสาร: ' + error.message);
+            }
+        }
+
+        function viewDocument(link, title = 'ดูเอกสาร') {
+            currentDocumentUrl = link;
             
-            // Show success message
-            const message = editingId ? 'แก้ไขเอกสารเรียบร้อยแล้ว' : 'เพิ่มเอกสารเรียบร้อยแล้ว';
-            alert(message + (uploadedFileUrl ? ' (ไฟล์ถูกอัปโหลดแล้ว)' : ' (ใช้ลิงก์ Google Drive)'));
+            // Set modal title
+            document.getElementById('viewerModalTitle').textContent = title;
+            
+            // Get iframe element
+            const iframe = document.getElementById('documentFrame');
+            
+            // Check if it's a Google Drive link
+            const fileId = link.match(/\/d\/([a-zA-Z0-9-_]+)/);
+            let viewUrl = link;
+            
+            if (fileId) {
+                // Convert Google Drive link to embeddable format
+                viewUrl = `https://drive.google.com/file/d/${fileId[1]}/preview`;
+            } else if (link.includes('supabase')) {
+                // For Supabase storage files, use direct URL
+                viewUrl = link;
+            }
+            
+            // Set iframe source
+            iframe.src = viewUrl;
+            
+            // Show modal
+            document.getElementById('documentViewerModal').style.display = 'block';
+            
+            console.log('Opening document viewer for:', viewUrl);
         }
 
-        function viewDocument(link) {
-            // Convert Google Drive link to viewable format
-            const fileId = link.match(/\/d\/([a-zA-Z0-9-_]+)/);
-            if (fileId) {
-                const viewLink = `https://drive.google.com/file/d/${fileId[1]}/preview`;
-                window.open(viewLink, '_blank');
-            } else {
-                window.open(link, '_blank');
+        function closeViewerModal() {
+            const iframe = document.getElementById('documentFrame');
+            iframe.src = ''; // Clear iframe source to stop loading
+            document.getElementById('documentViewerModal').style.display = 'none';
+            currentDocumentUrl = null;
+        }
+
+        function openInNewTab() {
+            if (currentDocumentUrl) {
+                // For Google Drive links, use view format instead of preview
+                const fileId = currentDocumentUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
+                let newTabUrl = currentDocumentUrl;
+                
+                if (fileId) {
+                    newTabUrl = `https://drive.google.com/file/d/${fileId[1]}/view`;
+                }
+                
+                window.open(newTabUrl, '_blank');
             }
         }
 
-        function deleteDocument(id, title) {
+        async function deleteDocument(id, title) {
             // Show confirmation dialog
             const confirmed = confirm(`คุณต้องการลบเอกสาร "${title}" หรือไม่?\n\nการลบนี้ไม่สามารถยกเลิกได้`);
             
             if (confirmed) {
-                // Find and remove the document
-                const index = documents.findIndex(d => d.id === id);
-                if (index !== -1) {
-                    documents.splice(index, 1);
+                try {
+                    // Delete from Supabase
+                    const { error } = await window.supabaseClient
+                        .from('documents')
+                        .delete()
+                        .eq('id', id);
                     
-                    // Update the display
-                    filterDocuments();
-                    updateStats();
+                    if (error) throw error;
                     
-                    // Show success message
-                    alert('ลบเอกสารเรียบร้อยแล้ว');
+                    // Remove from local array
+                    const index = documents.findIndex(d => d.id === id);
+                    if (index !== -1) {
+                        documents.splice(index, 1);
+                        
+                        // Update the display
+                        filterDocuments();
+                        updateStats();
+                        
+                        // Show success message
+                        alert('ลบเอกสารเรียบร้อยแล้ว');
+                    }
+                } catch (error) {
+                    console.error('Error deleting document:', error);
+                    alert('เกิดข้อผิดพลาดในการลบเอกสาร: ' + error.message);
                 }
             }
         }
 
         // Close modal when clicking outside
         window.onclick = function(event) {
-            const modal = document.getElementById('documentModal');
-            if (event.target === modal) {
+            const documentModal = document.getElementById('documentModal');
+            const viewerModal = document.getElementById('documentViewerModal');
+            
+            if (event.target === documentModal) {
                 closeModal();
+            }
+            
+            if (event.target === viewerModal) {
+                closeViewerModal();
             }
         }
 
@@ -1560,6 +1809,20 @@
                 localStorage.setItem('documentDraft', JSON.stringify(formData));
             });
         });
+
+        // ฟังก์ชันสำหรับดึงข้อมูลฟอร์ม
+        function getFormData() {
+            return {
+                docTitle: document.getElementById('docTitle').value,
+                docReceiptNo: document.getElementById('docReceiptNo').value,
+                docNumber: document.getElementById('docNumber').value,
+                docYear: document.getElementById('docYear').value,
+                docAgency: document.getElementById('docAgency').value,
+                docType: document.getElementById('docType').value,
+                docCategory: document.getElementById('docCategory').value,
+                docLink: document.getElementById('docLink').value
+            };
+        }
         
         // เพิ่มฟังก์ชันโหลดร่างอัตโนมัติ
         function loadDraft() {
@@ -1580,6 +1843,56 @@
                 }
             }
         }
+
+        // เพิ่มฟังก์ชันสำหรับการ sync ข้อมูลแบบ real-time (Supabase)
+        function setupRealtimeListener() {
+            // Subscribe to changes in documents table
+            const subscription = window.supabaseClient
+                .channel('documents-changes')
+                .on('postgres_changes', 
+                    { 
+                        event: '*', 
+                        schema: 'public', 
+                        table: 'documents' 
+                    },
+                    (payload) => {
+                        console.log('Real-time change detected:', payload);
+                        
+                        switch (payload.eventType) {
+                            case 'INSERT':
+                                const newDoc = payload.new;
+                                const existingIndex = documents.findIndex(d => d.id === newDoc.id);
+                                if (existingIndex === -1) {
+                                    documents.push(newDoc);
+                                }
+                                break;
+                                
+                            case 'UPDATE':
+                                const updatedDoc = payload.new;
+                                const updateIndex = documents.findIndex(d => d.id === updatedDoc.id);
+                                if (updateIndex !== -1) {
+                                    documents[updateIndex] = updatedDoc;
+                                }
+                                break;
+                                
+                            case 'DELETE':
+                                const deletedDoc = payload.old;
+                                const deleteIndex = documents.findIndex(d => d.id === deletedDoc.id);
+                                if (deleteIndex !== -1) {
+                                    documents.splice(deleteIndex, 1);
+                                }
+                                break;
+                        }
+                        
+                        filterDocuments();
+                        updateStats();
+                    }
+                )
+                .subscribe();
+            
+            // Return unsubscribe function for cleanup
+            return () => subscription.unsubscribe();
+        }
         
         // เพิ่มฟังก์ชันแสดงคีย์ลัด
         function toggleShortcutHelper() {
@@ -1587,5 +1900,6 @@
             helper.style.display = helper.style.display === 'none' ? 'block' : 'none';
         }
     </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'96a2b37f121b7329',t:'MTc1NDM1OTIyOS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
+</html>
 </html>
