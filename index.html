@@ -776,19 +776,12 @@
             }
         }
     </style>
-    <script src="https://www.gstatic.com/firebasejs/9.x.x/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.x.x/firebase-storage-compat.js"></script>
-    
-    <!-- Add Error Boundary -->
-    <script src="https://cdn.jsdelivr.net/npm/error-boundary-js@1.0.0/dist/error-boundary.min.js"></script>
-    
-    <!-- Add Notification System -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/notyf@3/notyf.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/notyf@3/notyf.min.js"></script>
-    
-    <!-- Add Export Libraries -->
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/pdfmake@0.2.7/build/pdfmake.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-storage-compat.js"></script>
+    <script type="module">
+        import { storage } from './js/firebaseConfig.js';
+        window.storage = storage;
+    </script>
 </head>
 <body>
     <div class="header">
@@ -1252,36 +1245,59 @@
 
         async function uploadToFirebase(file) {
             try {
-                const storage = firebase.storage();
-                const storageRef = storage.ref();
-                const fileRef = storageRef.child(`documents/${Date.now()}_${file.name}`);
+                // สร้างชื่อไฟล์ที่ไม่ซ้ำกัน
+                const timestamp = Date.now();
+                const fileName = `${timestamp}_${file.name}`;
                 
-                // Create upload task
+                // สร้าง reference ไปยัง storage
+                const storageRef = storage.ref();
+                const fileRef = storageRef.child(`documents/${fileName}`);
+                
+                // เริ่มการอัพโหลด
                 const uploadTask = fileRef.put(file);
                 
-                // Handle progress
-                uploadTask.on('state_changed', 
+                // ติดตามความคืบหน้า
+                uploadTask.on('state_changed',
+                    // อัพเดทความคืบหน้า
                     (snapshot) => {
                         const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                        document.getElementById('progressFill').style.width = progress + '%';
-                        document.getElementById('progressText').textContent = Math.round(progress) + '%';
+                        document.getElementById('progressFill').style.width = `${progress}%`;
+                        document.getElementById('progressText').textContent = `${Math.round(progress)}%`;
                     },
+                    // จัดการข้อผิดพลาด
                     (error) => {
                         console.error('Upload error:', error);
-                        alert('เกิดข้อผิดพลาดในการอัปโหลด: ' + error.message);
+                        alert(`เกิดข้อผิดพลาดในการอัพโหลด: ${error.message}`);
                         removeFile();
                     },
+                    // เมื่ออัพโหลดเสร็จ
                     async () => {
-                        // Upload completed successfully
-                        const downloadURL = await fileRef.getDownloadURL();
-                        uploadedFileUrl = downloadURL;
-                        document.getElementById('progressText').textContent = 'อัปโหลดสำเร็จ!';
-                        document.getElementById('progressFill').style.background = '#10b981';
+                        try {
+                            const downloadURL = await fileRef.getDownloadURL();
+                            uploadedFileUrl = downloadURL;
+                            document.getElementById('progressText').textContent = 'อัพโหลดสำเร็จ!';
+                            document.getElementById('progressFill').style.background = '#10b981';
+                            
+                            // บันทึกข้อมูลไฟล์
+                            const fileData = {
+                                name: file.name,
+                                size: file.size,
+                                type: file.type,
+                                uploadedAt: new Date().toISOString(),
+                                downloadURL
+                            };
+                            console.log('File uploaded successfully:', fileData);
+                            
+                        } catch (error) {
+                            console.error('Error getting download URL:', error);
+                            alert('เกิดข้อผิดพลาดในการรับ URL: ' + error.message);
+                        }
                     }
                 );
+                
             } catch (error) {
-                console.error('Firebase setup error:', error);
-                alert('เกิดข้อผิดพลาดในการเชื่อมต่อ Firebase: ' + error.message);
+                console.error('Firebase upload error:', error);
+                alert('เกิดข้อผิดพลาดในการอัพโหลด: ' + error.message);
                 removeFile();
             }
         }
